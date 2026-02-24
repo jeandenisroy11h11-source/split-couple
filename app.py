@@ -23,7 +23,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # --- SECTION 1 : AJOUTER UNE DÉPENSE --- st.header("📝 Ajouter une dépense")
 col1, col2 = st.columns(2)
 with col1:
-    description = st.text_input("Ou ?", placeholder="Ex: Maxi")
+    description = st.text_input("Où ?", placeholder="Ex: Maxi")
     amount = st.number_input(f"Montant ({DEVISE})", min_value=0.0, step=1.00, value=None, placeholder="0.00")
     date_depense = st.date_input("Date", datetime.now())
 
