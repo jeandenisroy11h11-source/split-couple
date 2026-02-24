@@ -92,8 +92,13 @@ if st.button("Enregistrer la dépense", type="primary", use_container_width=True
             if res.status_code == 200:
                 st.session_state.desc_val = ""
                 st.session_state.amount_val = None
-                st.balloons()
-                #st.rerun()
+                
+                # CHOISIS TON ANIMATION ICI :
+                #st.snow() # Pour la neige
+                st.toast("Dépense enregistrée !", icon="✅") # Pour le petit message
+                #st.balloons()
+                time.sleep(1) # Laisse le temps de voir l'animation
+                st.rerun()
         except Exception as e:
             st.error(f"Erreur d'envoi : {e}")
 
