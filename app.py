@@ -33,12 +33,13 @@ index_defaut = UTILISATEURS.index(user_invite) if user_invite in UTILISATEURS el
 if "desc_val" not in st.session_state: st.session_state.desc_val = ""
 if "amount_val" not in st.session_state: st.session_state.amount_val = None
 
-st.title("💰 Dépenses Couple")
+#st.title("💰 Dépenses Couple")
 
 # --- 2. CONNEXION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- 3. FORMULAIRE D'AJOUT (COMPACT) ---st.header("📝 Ajouter une dépense")
+# --- 3. FORMULAIRE D'AJOUT (COMPACT) ---
+st.header("💰 Dépenses en tant que couple")
 
 row1_col1, row1_col2 = st.columns([2, 1])
 with row1_col1:
