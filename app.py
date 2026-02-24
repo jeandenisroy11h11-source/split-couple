@@ -20,8 +20,7 @@ st.title("💰 Dépenses en tant que couple")
 # --- CONNEXION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- SECTION 1 : AJOUTER UNE DÉPENSE ---
-st.header("📝 Ajouter une dépense")
+# --- SECTION 1 : AJOUTER UNE DÉPENSE ---st.header("📝 Ajouter une dépense")
 col1, col2 = st.columns(2)
 with col1:
     # On ajoute des 'key' pour pouvoir réinitialiser les champs plus tard
