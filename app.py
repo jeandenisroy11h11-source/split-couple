@@ -40,8 +40,7 @@ st.title("💰 Dépenses en tant que couple")
 # --- CONNEXION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- SECTION 1 : AJOUTER UNE DÉPENSE ---
-st.header("📝 Ajouter une dépense")
+# --- SECTION 1 : AJOUTER UNE DÉPENSE ---st.header("📝 Ajouter une dépense")
 col1, col2 = st.columns(2)
 
 with col1:
@@ -64,9 +63,17 @@ part_payer = (amount_input_val * pct_payer) / 100
 part_autre = amount_input_val - part_payer
 autre_personne = UTILISATEURS[1] if payer == UTILISATEURS[0] else UTILISATEURS[0]
 
-# Affichage visuel des parts
+# --- AFFICHAGE VISUEL DES PARTS (PROPRE) ---
 if amount_input_val > 0:
-    st.info(f"💡 **Répartition :** {payer} paye **{part_payer:.2f}$** et {autre_personne} paye **{part_autre:.2f}$**")
+    st.markdown("---")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown(f"👤 **{payer}**")
+        st.markdown(f"Paye : `{part_payer:.2f}$`")
+    with c2:
+        st.markdown(f"👤 **{autre_personne}**")
+        st.markdown(f"Paye : `{part_autre:.2f}$`")
+    st.markdown("---")
 
 is_periodic = st.checkbox("Dépense mensuelle")
 
