@@ -6,7 +6,7 @@ import requests
 import time
 
 # --- CONFIGURATION ---
-st.set_page_config(page_title="Splitwise Couple", page_icon="💰")
+st.set_page_config(page_title="Splitwise couple", page_icon="💰")
 DEVISE = "CAD"
 UTILISATEURS = ["Jean-Denis", "Élyane"]
 
@@ -15,7 +15,7 @@ query_params = st.query_params
 user_invite = query_params.get("user", UTILISATEURS[0])
 index_defaut = UTILISATEURS.index(user_invite) if user_invite in UTILISATEURS else 0
 
-st.title("💰 Dépenses du Couple")
+st.title("💰 Dépenses en tant que couple")
 
 # --- CONNEXION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
