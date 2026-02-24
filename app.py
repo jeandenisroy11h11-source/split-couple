@@ -10,15 +10,16 @@ st.set_page_config(page_title="Splitwise gratuit", page_icon="💰")
 DEVISE = "CAD"
 UTILISATEURS = ["Jean-Denis", "Élyane"]
 
-# 1. FONCTION POUR VIDER LES CHAMPS (Callback)
-def clear_form():
-    st.session_state["input_desc"] = ""
-    st.session_state["input_amount"] = None
-
 # Gestion des utilisateurs via l'URL
 query_params = st.query_params
 user_invite = query_params.get("user", UTILISATEURS[0])
 index_defaut = UTILISATEURS.index(user_invite) if user_invite in UTILISATEURS else 0
+
+# --- INITIALISATION DES VALEURS ---
+if "desc_val" not in st.session_state:
+    st.session_state.desc_val = ""
+if "amount_val" not in st.session_state:
+    st.session_state.amount_val = None
 
 st.title("💰 Dépenses en tant que couple")
 
@@ -29,9 +30,10 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 col1, col2 = st.columns(2)
 
 with col1:
-    description = st.text_input("Où ?", placeholder="Ex: Maxi", key="input_desc")
-    amount = st.number_input(f"Montant ({DEVISE})", min_value=0.0, step=1.00, value=None, placeholder="0.00", key="input_amount")
-    date_depense = st.date_input("Date", datetime.now(), key="input_date")
+    # On utilise value=st.session_state.desc_val au lieu de la clé directe pour le contrôle
+    description = st.text_input("Où ?", value=st.session_state.desc_val, placeholder="Ex: Maxi")
+    amount = st.number_input(f"Montant ({DEVISE})", min_value=0.0, step=1.00, value=st.session_state.amount_val, placeholder="0.00")
+    date_depense = st.date_input("Date", datetime.now())
 
 with col2:
     payer = st.selectbox("Qui a payé ?", UTILISATEURS, index=index_defaut)
@@ -42,31 +44,34 @@ with col2:
     elif split_mode == "Perso %": pct_payer = st.slider("Part payeur (%)", 0, 100, 50)
     else: pct_payer = 50.0
 
-amount_val = amount if amount is not None else 0.0
-part_autre = amount_val - ((amount_val * pct_payer) / 100)
+# Calculs
+amount_input_val = amount if amount is not None else 0.0
+part_autre = amount_input_val - ((amount_input_val * pct_payer) / 100)
 is_periodic = st.checkbox("Dépense mensuelle")
 
-# 2. BOUTON AVEC CALLBACK
 if st.button("Enregistrer la dépense", type="primary"):
-    if description and amount_val > 0:
+    if description and amount_input_val > 0:
         payload = {
             "Date": date_depense.strftime("%Y-%m-%d"),
             "Description": description,
-            "Montant_Total": float(amount_val),
+            "Montant_Total": float(amount_input_val),
             "Payeur": payer,
-            "Part_Payeur": float(amount_val - part_autre),
+            "Part_Payeur": float(amount_input_val - part_autre),
             "Part_Autre": float(part_autre),
             "Periodique": "Oui" if is_periodic else "Non"
         }
         try:
             res = requests.post(st.secrets["api"]["url"], json=payload)
             if res.status_code == 200:
+                # C'EST ICI QUE ÇA CHANGE :
+                # On met à jour les variables de stockage
+                st.session_state.desc_val = ""
+                st.session_state.amount_val = None
+                
                 st.balloons()
                 st.success("🎉 Enregistré !")
-                # On vide manuellement avant le rerun pour cette fois-ci
-                clear_form()
                 time.sleep(1)
-                st.rerun()
+                st.rerun() # Le rerun va recharger la page avec les valeurs vides
         except Exception as e:
             st.error(f"Erreur d'envoi : {e}")
 
@@ -90,7 +95,9 @@ try:
         st.markdown("---")
         st.header("📈 État & Historique")
         
-        solde_global = df[df['Payeur'] == 'Jean-Denis']['Part_Autre'].sum() - df[df['Payeur'] == 'Élyane']['Part_Autre'].sum()
+        du_a_jd = df[df['Payeur'] == 'Jean-Denis']['Part_Autre'].sum()
+        du_a_ely = df[df['Payeur'] == 'Élyane']['Part_Autre'].sum()
+        solde_global = du_a_jd - du_a_ely
 
         if solde_global > 0:
             st.warning(f"💰 **SOLDE :** Élyane doit **{abs(solde_global):.2f} {DEVISE}** à Jean-Denis")
@@ -107,7 +114,7 @@ try:
             mois_sel = st.selectbox("Filtrer par mois", ["Tous"] + liste_mois, index=default_idx + 1 if "Tous" in ["Tous"] else default_idx)
             disp_df = df if mois_sel == "Tous" else df[df['Mois'] == mois_sel]
             
-            # Affichage trié (plus récent en haut)
+            # Trié par date (plus récent en haut)
             st.dataframe(disp_df.drop(columns=['Mois']).sort_values(by="Date", ascending=False), use_container_width=True)
             
             st.subheader("🗑️ Supprimer une ligne")
@@ -148,6 +155,6 @@ try:
                         time.sleep(1)
                         st.rerun()
                 else:
-                    st.success(f"✅ Toutes les récurrences sont à jour pour {mois_actuel}.")
+                    st.success(f"✅ Toutes les récurrences sont à jour.")
 except Exception as e:
     st.error(f"Erreur technique : {e}")
