@@ -6,7 +6,23 @@ import requests
 import time
 
 # --- CONFIGURATION ---
-st.set_page_config(page_title="Splitwise gratuit", page_icon="💰")
+# Remplace l'URL ci-dessous par celle de ton logo (doit finir par .png ou .jpg)
+LOGO_URL = "https://cdn-icons-png.flaticon.com/512/1611/1611179.png" 
+
+st.set_page_config(
+    page_title="Splitwise gratuit", 
+    page_icon="💰", # Icône de l'onglet
+    layout="centered"
+)
+
+# SOLUTION 3 : Injection HTML pour l'icône mobile (Apple & Android)
+st.markdown(f"""
+    <head>
+        <link rel="apple-touch-icon" href="{LOGO_URL}">
+        <link rel="icon" href="{LOGO_URL}">
+    </head>
+    """, unsafe_allow_html=True)
+
 DEVISE = "CAD"
 UTILISATEURS = ["Jean-Denis", "Élyane"]
 
@@ -15,22 +31,20 @@ query_params = st.query_params
 user_invite = query_params.get("user", UTILISATEURS[0])
 index_defaut = UTILISATEURS.index(user_invite) if user_invite in UTILISATEURS else 0
 
-# --- INITIALISATION DES VALEURS ---
-if "desc_val" not in st.session_state:
-    st.session_state.desc_val = ""
-if "amount_val" not in st.session_state:
-    st.session_state.amount_val = None
+# Initialisation des valeurs pour le reset
+if "desc_val" not in st.session_state: st.session_state.desc_val = ""
+if "amount_val" not in st.session_state: st.session_state.amount_val = None
 
 st.title("💰 Dépenses en tant que couple")
 
 # --- CONNEXION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- SECTION 1 : AJOUTER UNE DÉPENSE ---st.header("📝 Ajouter une dépense")
+# --- SECTION 1 : AJOUTER UNE DÉPENSE ---
+st.header("📝 Ajouter une dépense")
 col1, col2 = st.columns(2)
 
 with col1:
-    # On utilise value=st.session_state.desc_val au lieu de la clé directe pour le contrôle
     description = st.text_input("Où ?", value=st.session_state.desc_val, placeholder="Ex: Maxi")
     amount = st.number_input(f"Montant ({DEVISE})", min_value=0.0, step=1.00, value=st.session_state.amount_val, placeholder="0.00")
     date_depense = st.date_input("Date", datetime.now())
@@ -44,9 +58,16 @@ with col2:
     elif split_mode == "Perso %": pct_payer = st.slider("Part payeur (%)", 0, 100, 50)
     else: pct_payer = 50.0
 
-# Calculs
+# --- RETOUR DU CALCUL EN TEMPS RÉEL ---
 amount_input_val = amount if amount is not None else 0.0
-part_autre = amount_input_val - ((amount_input_val * pct_payer) / 100)
+part_payer = (amount_input_val * pct_payer) / 100
+part_autre = amount_input_val - part_payer
+autre_personne = UTILISATEURS[1] if payer == UTILISATEURS[0] else UTILISATEURS[0]
+
+# Affichage visuel des parts
+if amount_input_val > 0:
+    st.info(f"💡 **Répartition :** {payer} paye **{part_payer:.2f}$** et {autre_personne} paye **{part_autre:.2f}$**")
+
 is_periodic = st.checkbox("Dépense mensuelle")
 
 if st.button("Enregistrer la dépense", type="primary"):
@@ -56,26 +77,23 @@ if st.button("Enregistrer la dépense", type="primary"):
             "Description": description,
             "Montant_Total": float(amount_input_val),
             "Payeur": payer,
-            "Part_Payeur": float(amount_input_val - part_autre),
+            "Part_Payeur": float(part_payer),
             "Part_Autre": float(part_autre),
             "Periodique": "Oui" if is_periodic else "Non"
         }
         try:
             res = requests.post(st.secrets["api"]["url"], json=payload)
             if res.status_code == 200:
-                # C'EST ICI QUE ÇA CHANGE :
-                # On met à jour les variables de stockage
                 st.session_state.desc_val = ""
                 st.session_state.amount_val = None
-                
                 st.balloons()
                 st.success("🎉 Enregistré !")
                 time.sleep(1)
-                st.rerun() # Le rerun va recharger la page avec les valeurs vides
+                st.rerun()
         except Exception as e:
             st.error(f"Erreur d'envoi : {e}")
 
-# --- CHARGEMENT ET NETTOYAGE ---
+# --- LE RESTE DU CODE (HISTORIQUE ET RÉCURRENCES) ---
 try:
     raw_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
     csv_url = raw_url.split('/edit')[0] + '/export?format=csv'
@@ -91,7 +109,6 @@ try:
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.date
         df['Mois'] = pd.to_datetime(df['Date']).dt.to_period('M').astype(str)
         
-        # --- SECTION 2 : ÉTAT & HISTORIQUE ---
         st.markdown("---")
         st.header("📈 État & Historique")
         
@@ -113,27 +130,19 @@ try:
         with st.expander("🔎 Détails & Suppression"):
             mois_sel = st.selectbox("Filtrer par mois", ["Tous"] + liste_mois, index=default_idx + 1 if "Tous" in ["Tous"] else default_idx)
             disp_df = df if mois_sel == "Tous" else df[df['Mois'] == mois_sel]
-            
-            # Trié par date (plus récent en haut)
             st.dataframe(disp_df.drop(columns=['Mois']).sort_values(by="Date", ascending=False), use_container_width=True)
             
             st.subheader("🗑️ Supprimer une ligne")
             index_dernier = len(disp_df) - 1 if len(disp_df) > 0 else 0
-            choix = st.selectbox(
-                "Choisir la dépense", 
-                options=disp_df.index, 
-                index=index_dernier,
-                format_func=lambda x: f"{disp_df.loc[x, 'Description']} ({disp_df.loc[x, 'Montant_Total']})"
-            )
+            choix = st.selectbox("Choisir la dépense", options=disp_df.index, index=index_dernier,
+                               format_func=lambda x: f"{disp_df.loc[x, 'Description']} ({disp_df.loc[x, 'Montant_Total']})")
             if st.button("Confirmer la suppression"):
                 p_del = {"action": "delete", "Description": str(disp_df.loc[choix, 'Description']), "Montant_Total": float(disp_df.loc[choix, 'Montant_Total'])}
                 requests.post(st.secrets["api"]["url"], json=p_del)
                 st.rerun()
 
-        # --- SECTION 3 : RÉCURRENCES ---
         st.markdown("---")
         st.header("⚙️ Récurrences")
-        
         df_modeles = df[(df['Periodique'] == 'Oui') & (~df['Description'].str.contains("\[AUTO\]", na=False))]
         df_rec = df_modeles.drop_duplicates(subset=['Description', 'Montant_Total'])
         
@@ -144,9 +153,8 @@ try:
                 
                 if manquantes:
                     df_man = pd.DataFrame(manquantes)
-                    st.warning(f"⚠️ Il manque **{len(manquantes)}** récurrences pour {mois_actuel}")
+                    st.warning(f"⚠️ Il manque **{len(manquantes)}** récurrences")
                     st.table(df_man[['Description', 'Montant_Total', 'Payeur']])
-                    
                     if st.button(f"🔄 Générer les {len(manquantes)} manquantes"):
                         for m_row in manquantes:
                             p_auto = {"Date": datetime.now().strftime("%Y-%m-%d"), "Description": f"[AUTO] {m_row['Description']}", "Montant_Total": float(m_row['Montant_Total']), "Payeur": m_row['Payeur'], "Part_Payeur": float(m_row['Part_Payeur']), "Part_Autre": float(m_row['Part_Autre']), "Periodique": "Oui"}
@@ -155,6 +163,6 @@ try:
                         time.sleep(1)
                         st.rerun()
                 else:
-                    st.success(f"✅ Toutes les récurrences sont à jour.")
+                    st.success(f"✅ À jour.")
 except Exception as e:
     st.error(f"Erreur technique : {e}")
