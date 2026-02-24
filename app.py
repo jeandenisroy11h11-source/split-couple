@@ -93,7 +93,7 @@ if st.button("Enregistrer la dépense", type="primary", use_container_width=True
                 st.session_state.desc_val = ""
                 st.session_state.amount_val = None
                 st.balloons()
-                st.rerun()
+                #st.rerun()
         except Exception as e:
             st.error(f"Erreur d'envoi : {e}")
 
