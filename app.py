@@ -10,6 +10,7 @@ st.set_page_config(page_title="Splitwise Couple", page_icon="💰")
 DEVISE = "CAD"
 UTILISATEURS = ["Jean-Denis", "Élyane"]
 
+# Paramètres URL pour le lien personnalisé
 query_params = st.query_params
 user_invite = query_params.get("user", UTILISATEURS[0])
 index_defaut = UTILISATEURS.index(user_invite) if user_invite in UTILISATEURS else 0
@@ -24,7 +25,6 @@ st.header("📝 Ajouter une dépense")
 col1, col2 = st.columns(2)
 with col1:
     description = st.text_input("Quoi ?", placeholder="Ex: Épicerie")
-    # CORRECTION 1 : Montant vide par défaut (value=None)
     amount = st.number_input(f"Montant ({DEVISE})", min_value=0.0, step=0.01, value=None, placeholder="0.00")
     date_depense = st.date_input("Date", datetime.now())
 
@@ -37,7 +37,6 @@ with col2:
     elif split_mode == "Perso %": pct_payer = st.slider("Part payeur (%)", 0, 100, 50)
     else: pct_payer = 50.0
 
-# Calculs
 amount_val = amount if amount is not None else 0.0
 autre_personne = UTILISATEURS[1] if payer == UTILISATEURS[0] else UTILISATEURS[0]
 part_payer = (amount_val * pct_payer) / 100
@@ -64,27 +63,28 @@ if st.button("🚀 Enregistrer la dépense", type="primary"):
             time.sleep(1)
             st.rerun()
 
-# --- SECTION 2 : ÉTAT & HISTORIQUE ---
-st.markdown("---")
-st.header("📈 État & Historique")
-
+# --- CHARGEMENT DES DONNÉES ---
 try:
     raw_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
     csv_url = raw_url.split('/edit')[0] + '/export?format=csv'
     df = pd.read_csv(csv_url)
 
     if not df.empty:
+        # Nettoyage
         df['Part_Autre'] = pd.to_numeric(df['Part_Autre'], errors='coerce').fillna(0)
+        df['Montant_Total'] = pd.to_numeric(df['Montant_Total'], errors='coerce').fillna(0)
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
         df['Mois'] = df['Date'].dt.to_period('M').astype(str)
         
-        # Solde Global
+        # --- SECTION 2 : ÉTAT & HISTORIQUE ---
+        st.markdown("---")
+        st.header("📈 État & Historique")
+        
         solde = df[df['Payeur'] == 'Jean-Denis']['Part_Autre'].sum() - df[df['Payeur'] == 'Élyane']['Part_Autre'].sum()
-        if solde > 0: st.warning(f"Élyane doit **{abs(solde):.2f}** à JD")
-        elif solde < 0: st.success(f"Jean-Denis doit **{abs(solde):.2f}** à Élyane")
+        if solde > 0: st.warning(f"Élyane doit **{abs(solde):.2f} {DEVISE}** à Jean-Denis")
+        elif solde < 0: st.success(f"Jean-Denis doit **{abs(solde):.2f} {DEVISE}** à Élyane")
         else: st.info("✅ Équilibre parfait")
 
-        # CORRECTION 2 : Filtre mois actuel par défaut
         mois_actuel = datetime.now().strftime("%Y-%m")
         liste_mois = sorted(df['Mois'].unique(), reverse=True)
         default_idx = liste_mois.index(mois_actuel) if mois_actuel in liste_mois else 0
@@ -101,35 +101,48 @@ try:
                 requests.post(st.secrets["api"]["url"], json=p_del)
                 st.rerun()
 
-    # --- SECTION 3 : RÉCURRENCES (CORRECTION 3 : Anti-doublon) ---
-    st.markdown("---")
-    st.header("⚙️ Récurrences")
-    df_rec = df[df['Periodique'] == 'Oui'].drop_duplicates(subset=['Description', 'Montant_Total'])
-    
-    if not df_rec.empty:
-        # On vérifie si les récurrences existent déjà pour ce mois
-        deja_fait = df[df['Mois'] == mois_actuel]['Description'].str.contains("\[AUTO\]").any()
+        # --- SECTION 3 : RÉCURRENCES ---
+        st.markdown("---")
+        st.header("⚙️ Récurrences")
         
-        if deja_fait:
-            st.info("✅ Les récurrences de ce mois ont déjà été générées.")
+        # On filtre les uniques qui ont été marquées 'Oui' (n'importe quand dans l'historique)
+        df_rec = df[df['Periodique'] == 'Oui'].drop_duplicates(subset=['Description', 'Montant_Total'])
+        
+        if not df_rec.empty:
+            with st.expander("📋 Liste des récurrences", expanded=True):
+                st.write(f"Vous avez {len(df_rec)} dépenses récurrentes :")
+                st.table(df_rec[['Description', 'Montant_Total', 'Payeur']])
+                
+                # Check si déjà fait ce mois-ci
+                deja_genere = df[(df['Mois'] == mois_actuel) & (df['Description'].str.contains("\[AUTO\]"))]
+                
+                if not deja_genere.empty:
+                    st.info(f"✅ Récurrences déjà injectées pour {mois_actuel}.")
+                    bloque = not st.checkbox("Forcer un nouvel ajout")
+                else:
+                    bloque = False
+
+                if st.button("🔄 Générer pour ce mois-ci", disabled=bloque):
+                    bar = st.progress(0)
+                    for i, (_, row) in enumerate(df_rec.iterrows()):
+                        p_auto = {
+                            "Date": datetime.now().strftime("%Y-%m-%d"),
+                            "Description": f"[AUTO] {row['Description']}",
+                            "Montant_Total": float(row['Montant_Total']),
+                            "Payeur": row['Payeur'],
+                            "Part_Payeur": float(row['Part_Payeur']),
+                            "Part_Autre": float(row['Part_Autre']),
+                            "Periodique": "Oui"
+                        }
+                        requests.post(st.secrets["api"]["url"], json=p_auto)
+                        bar.progress((i + 1) / len(df_rec))
+                    st.success("🎉 Les récurrences ont été ajoutées à l'historique !")
+                    time.sleep(1)
+                    st.rerun()
         else:
-            if st.button("🔄 Générer les récurrences du mois"):
-                progress_bar = st.progress(0)
-                for i, (_, row) in enumerate(df_rec.iterrows()):
-                    p_auto = {
-                        "Date": datetime.now().strftime("%Y-%m-%d"),
-                        "Description": f"[AUTO] {row['Description']}",
-                        "Montant_Total": float(row['Montant_Total']),
-                        "Payeur": row['Payeur'],
-                        "Part_Payeur": float(row['Part_Payeur']),
-                        "Part_Autre": float(row['Part_Autre']),
-                        "Periodique": "Oui"
-                    }
-                    requests.post(st.secrets["api"]["url"], json=p_auto)
-                    progress_bar.progress((i + 1) / len(df_rec))
-                st.success("🚀 Terminé ! Toutes les dépenses ont été ajoutées.")
-                time.sleep(1)
-                st.rerun()
+            st.info("Cochez 'Dépense périodique' lors d'un achat pour le voir ici.")
+    else:
+        st.info("Aucune donnée trouvée.")
 
 except Exception as e:
-    st.error(f"Erreur : {e}")
+    st.error(f"Erreur technique : {e}")
