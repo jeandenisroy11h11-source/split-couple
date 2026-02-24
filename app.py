@@ -6,24 +6,26 @@ import requests
 import time
 
 # --- CONFIGURATION ---
-st.set_page_config(page_title="Splitwise Couple", page_icon="💰")
+st.set_page_config(page_title="Splitwise gratuit", page_icon="💰")
 DEVISE = "CAD"
 UTILISATEURS = ["Jean-Denis", "Élyane"]
 
+# Gestion des utilisateurs via l'URL (?user=Élyane)
 query_params = st.query_params
 user_invite = query_params.get("user", UTILISATEURS[0])
 index_defaut = UTILISATEURS.index(user_invite) if user_invite in UTILISATEURS else 0
 
-st.title("💰 Dépenses du Couple")
+st.title("💰 Dépenses en tant que couple")
 
+# --- CONNEXION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # --- SECTION 1 : AJOUTER UNE DÉPENSE ---
 st.header("📝 Ajouter une dépense")
 col1, col2 = st.columns(2)
 with col1:
-    description = st.text_input("Quoi ?", placeholder="Ex: Loyer")
-    amount = st.number_input(f"Montant ({DEVISE})", min_value=0.0, step=0.01, value=None, placeholder="0.00")
+    description = st.text_input("Quoi ?", placeholder="Ex: Épicerie")
+    amount = st.number_input(f"Montant ({DEVISE})", min_value=0.0, step=1.00, value=None, placeholder="0.00")
     date_depense = st.date_input("Date", datetime.now())
 
 with col2:
@@ -35,13 +37,14 @@ with col2:
     elif split_mode == "Perso %": pct_payer = st.slider("Part payeur (%)", 0, 100, 50)
     else: pct_payer = 50.0
 
+# Calculs de parts
 amount_val = amount if amount is not None else 0.0
 autre_personne = UTILISATEURS[1] if payer == UTILISATEURS[0] else UTILISATEURS[0]
 part_payer = (amount_val * pct_payer) / 100
 part_autre = amount_val - part_payer
 
 st.write(f"**Part de {payer} :** {part_payer:.2f} | **Part de {autre_personne} :** {part_autre:.2f}")
-is_periodic = st.checkbox("Dépense périodique (mensuelle)")
+is_periodic = st.checkbox("Dépense mensuelle")
 
 if st.button("🚀 Enregistrer la dépense", type="primary"):
     if description and amount_val > 0:
@@ -54,12 +57,15 @@ if st.button("🚀 Enregistrer la dépense", type="primary"):
             "Part_Autre": float(part_autre),
             "Periodique": "Oui" if is_periodic else "Non"
         }
-        res = requests.post(st.secrets["api"]["url"], json=payload)
-        if res.status_code == 200:
-            st.balloons()
-            st.success("🎉 Enregistré !")
-            time.sleep(1)
-            st.rerun()
+        try:
+            res = requests.post(st.secrets["api"]["url"], json=payload)
+            if res.status_code == 200:
+                st.balloons()
+                st.success("🎉 Enregistré !")
+                time.sleep(1)
+                st.rerun()
+        except Exception as e:
+            st.error(f"Erreur d'envoi : {e}")
 
 # --- CHARGEMENT ET NETTOYAGE ---
 try:
@@ -68,35 +74,46 @@ try:
     df = pd.read_csv(csv_url)
 
     if not df.empty:
-        # NETTOYAGE CRUCIAL DES VIRGULES
-        for col in ['Montant_Total', 'Part_Payeur', 'Part_Autre']:
-            if df[col].dtype == object:
-                df[col] = df[col].str.replace(',', '.').astype(float)
+        # 1. Nettoyage des virgules (Crucial pour éviter l'erreur de conversion)
+        cols_finance = ['Montant_Total', 'Part_Payeur', 'Part_Autre']
+        for col in cols_finance:
+            if col in df.columns:
+                df[col] = df[col].astype(str).str.replace(',', '.')
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
         
-        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-        df['Mois'] = df['Date'].dt.to_period('M').astype(str)
+        # 2. Formatage Date et Mois (Sans l'heure)
+        df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.date
+        df['Mois'] = pd.to_datetime(df['Date']).dt.to_period('M').astype(str)
         
         # --- SECTION 2 : ÉTAT & HISTORIQUE ---
         st.markdown("---")
         st.header("📈 État & Historique")
         
-        solde = df[df['Payeur'] == 'Jean-Denis']['Part_Autre'].sum() - df[df['Payeur'] == 'Élyane']['Part_Autre'].sum()
-        if solde > 0: st.warning(f"Élyane doit **{abs(solde):.2f} {DEVISE}** à JD")
-        elif solde < 0: st.success(f"Jean-Denis doit **{abs(solde):.2f} {DEVISE}** à Élyane")
-        else: st.info("✅ Équilibre parfait")
+        # Calcul du solde
+        du_a_jean = df[df['Payeur'] == 'Jean-Denis']['Part_Autre'].sum()
+        du_a_elyane = df[df['Payeur'] == 'Élyane']['Part_Autre'].sum()
+        solde_global = float(du_a_jean) - float(du_a_elyane)
 
+        if solde_global > 0:
+            st.warning(f"💰 **SOLDE :** Élyane doit **{abs(solde_global):.2f} {DEVISE}** à Jean-Denis")
+        elif solde_global < 0:
+            st.success(f"💰 **SOLDE :** Jean-Denis doit **{abs(solde_global):.2f} {DEVISE}** à Élyane")
+        else:
+            st.info("✅ Équilibre parfait !")
+
+        # Historique filtré
         mois_actuel = datetime.now().strftime("%Y-%m")
         liste_mois = sorted([m for m in df['Mois'].unique() if pd.notna(m)], reverse=True)
         default_idx = liste_mois.index(mois_actuel) if mois_actuel in liste_mois else 0
 
         with st.expander("🔎 Détails & Suppression"):
-            mois_sel = st.selectbox("Mois", ["Tous"] + liste_mois, index=default_idx + 1 if "Tous" in ["Tous"] else default_idx)
+            mois_sel = st.selectbox("Filtrer par mois", ["Tous"] + liste_mois, index=default_idx + 1 if "Tous" in ["Tous"] else default_idx)
             disp_df = df if mois_sel == "Tous" else df[df['Mois'] == mois_sel]
             st.dataframe(disp_df.drop(columns=['Mois']), use_container_width=True)
             
-            st.subheader("🗑️ Supprimer")
-            choix = st.selectbox("Ligne", options=disp_df.index, format_func=lambda x: f"{disp_df.loc[x, 'Description']} ({disp_df.loc[x, 'Montant_Total']})")
-            if st.button("Confirmer suppression"):
+            st.subheader("🗑️ Supprimer une ligne")
+            choix = st.selectbox("Choisir la dépense", options=disp_df.index, format_func=lambda x: f"{disp_df.loc[x, 'Description']} ({disp_df.loc[x, 'Montant_Total']})")
+            if st.button("Confirmer la suppression"):
                 p_del = {"action": "delete", "Description": str(disp_df.loc[choix, 'Description']), "Montant_Total": float(disp_df.loc[choix, 'Montant_Total'])}
                 requests.post(st.secrets["api"]["url"], json=p_del)
                 st.rerun()
@@ -105,26 +122,25 @@ try:
         st.markdown("---")
         st.header("⚙️ Récurrences")
         
-        # 1. On identifie toutes les récurrences uniques dans l'historique
-        df_rec = df[df['Periodique'] == 'Oui'].drop_duplicates(subset=['Description', 'Montant_Total'])
+        # On ne prend que les modèles originaux (pas les [AUTO]) marqués Périodique
+        df_modeles = df[(df['Periodique'] == 'Oui') & (~df['Description'].str.contains("\[AUTO\]", na=False))]
+        df_rec = df_modeles.drop_duplicates(subset=['Description', 'Montant_Total'])
         
         if not df_rec.empty:
             with st.expander(f"📋 Gestion des récurrences", expanded=True):
-                # 2. On regarde ce qui a DEJÀ été généré ce mois-ci
-                mois_actuel = datetime.now().strftime("%Y-%m")
-                deja_faites_ce_mois = df[df['Mois'] == mois_actuel]['Description'].unique().tolist()
+                # On regarde ce qui a déjà été créé ce mois-ci en version [AUTO]
+                deja_faites_ce_mois = df[(df['Mois'] == mois_actuel) & (df['Description'].str.contains("\[AUTO\]", na=False))]['Description'].unique().tolist()
                 
-                # 3. On filtre pour ne garder que celles qui ne sont pas encore en [AUTO] ce mois-ci
                 manquantes = []
                 for _, row in df_rec.iterrows():
-                    nom_auto = f"[AUTO] {row['Description']}"
-                    if nom_auto not in deja_faites_ce_mois:
+                    nom_cible = f"[AUTO] {row['Description']}"
+                    if nom_cible not in deja_faites_ce_mois:
                         manquantes.append(row)
                 
                 if manquantes:
-                    df_manquantes = pd.DataFrame(manquantes)
-                    st.write(f"⚠️ Il manque **{len(manquantes)}** récurrences à générer pour {mois_actuel} :")
-                    st.table(df_manquantes[['Description', 'Montant_Total', 'Payeur']])
+                    df_man = pd.DataFrame(manquantes)
+                    st.warning(f"⚠️ Il manque **{len(manquantes)}** récurrences à générer pour {mois_actuel}")
+                    st.table(df_man[['Description', 'Montant_Total', 'Payeur']])
                     
                     if st.button(f"🔄 Générer les {len(manquantes)} manquantes"):
                         bar = st.progress(0)
@@ -140,13 +156,13 @@ try:
                             }
                             requests.post(st.secrets["api"]["url"], json=p_auto)
                             bar.progress((i + 1) / len(manquantes))
-                        st.success("Terminé !")
+                        st.success("🎉 Récurrences ajoutées !")
                         time.sleep(1)
                         st.rerun()
                 else:
-                    st.success(f"✅ Toutes les récurrences ({len(df_rec)}) sont déjà présentes en {mois_actuel}.")
+                    st.success(f"✅ Toutes les récurrences ({len(df_rec)}) sont à jour pour {mois_actuel}.")
         else:
-            st.info("Aucune dépense marquée comme 'Périodique' dans l'historique.")
+            st.info("Cochez 'Dépense périodique' lors d'un ajout pour qu'elle apparaisse ici.")
 
 except Exception as e:
     st.error(f"Erreur technique : {e}")
