@@ -20,12 +20,14 @@ st.title("💰 Dépenses en tant que couple")
 # --- CONNEXION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- SECTION 1 : AJOUTER UNE DÉPENSE --- st.header("📝 Ajouter une dépense")
+# --- SECTION 1 : AJOUTER UNE DÉPENSE ---
+st.header("📝 Ajouter une dépense")
 col1, col2 = st.columns(2)
 with col1:
-    description = st.text_input("Où ?", placeholder="Ex: Maxi")
-    amount = st.number_input(f"Montant ({DEVISE})", min_value=0.0, step=1.00, value=None, placeholder="0.00")
-    date_depense = st.date_input("Date", datetime.now())
+    # On ajoute des 'key' pour pouvoir réinitialiser les champs plus tard
+    description = st.text_input("Où ?", placeholder="Ex: Maxi", key="input_desc")
+    amount = st.number_input(f"Montant ({DEVISE})", min_value=0.0, step=1.00, value=None, placeholder="0.00", key="input_amount")
+    date_depense = st.date_input("Date", datetime.now(), key="input_date")
 
 with col2:
     payer = st.selectbox("Qui a payé ?", UTILISATEURS, index=index_defaut)
@@ -61,6 +63,12 @@ if st.button("Enregistrer la dépense", type="primary"):
             if res.status_code == 200:
                 st.balloons()
                 st.success("🎉 Enregistré !")
+                
+                # --- RÉINITIALISATION DES CHAMPS ---
+                st.session_state["input_desc"] = ""
+                st.session_state["input_amount"] = None
+                # La date revient automatiquement à aujourd'hui via le rerun car elle n'est pas figée dans le state
+                
                 time.sleep(1)
                 st.rerun()
         except Exception as e:
@@ -73,14 +81,14 @@ try:
     df = pd.read_csv(csv_url)
 
     if not df.empty:
-        # 1. Nettoyage des virgules (Crucial pour éviter l'erreur de conversion)
+        # 1. Nettoyage des virgules
         cols_finance = ['Montant_Total', 'Part_Payeur', 'Part_Autre']
         for col in cols_finance:
             if col in df.columns:
                 df[col] = df[col].astype(str).str.replace(',', '.')
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
         
-        # 2. Formatage Date et Mois (Sans l'heure)
+        # 2. Formatage Date et Mois
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.date
         df['Mois'] = pd.to_datetime(df['Date']).dt.to_period('M').astype(str)
         
@@ -88,7 +96,6 @@ try:
         st.markdown("---")
         st.header("📈 État & Historique")
         
-        # Calcul du solde
         du_a_jean = df[df['Payeur'] == 'Jean-Denis']['Part_Autre'].sum()
         du_a_elyane = df[df['Payeur'] == 'Élyane']['Part_Autre'].sum()
         solde_global = float(du_a_jean) - float(du_a_elyane)
@@ -100,7 +107,6 @@ try:
         else:
             st.info("✅ Équilibre parfait !")
 
-        # Historique filtré
         mois_actuel = datetime.now().strftime("%Y-%m")
         liste_mois = sorted([m for m in df['Mois'].unique() if pd.notna(m)], reverse=True)
         default_idx = liste_mois.index(mois_actuel) if mois_actuel in liste_mois else 0
@@ -108,17 +114,20 @@ try:
         with st.expander("🔎 Détails & Suppression"):
             mois_sel = st.selectbox("Filtrer par mois", ["Tous"] + liste_mois, index=default_idx + 1 if "Tous" in ["Tous"] else default_idx)
             disp_df = df if mois_sel == "Tous" else df[df['Mois'] == mois_sel]
-            st.dataframe(disp_df.drop(columns=['Mois']), use_container_width=True)
+            
+            # --- TRIER PAR DATE (plus récent en haut) ---
+            disp_df_sorted = disp_df.sort_values(by="Date", ascending=False)
+            st.dataframe(disp_df_sorted.drop(columns=['Mois']), use_container_width=True)
             
             st.subheader("🗑️ Supprimer une ligne")
             
-            # On définit l'index sur la dernière ligne (len(disp_df) - 1)
+            # On définit l'index sur la dernière ligne du dataframe filtré
             index_dernier = len(disp_df) - 1 if len(disp_df) > 0 else 0
             
             choix = st.selectbox(
                 "Choisir la dépense", 
                 options=disp_df.index, 
-                index=index_dernier,  # <-- C'est ici que la magie opère
+                index=index_dernier,
                 format_func=lambda x: f"{disp_df.loc[x, 'Description']} ({disp_df.loc[x, 'Montant_Total']})"
             )
             
@@ -127,17 +136,15 @@ try:
                 requests.post(st.secrets["api"]["url"], json=p_del)
                 st.rerun()
 
-        # --- SECTION 3 : RÉCURRENCES (DÉTECTION INTELLIGENTE) ---
+        # --- SECTION 3 : RÉCURRENCES ---
         st.markdown("---")
         st.header("⚙️ Récurrences")
         
-        # On ne prend que les modèles originaux (pas les [AUTO]) marqués Périodique
         df_modeles = df[(df['Periodique'] == 'Oui') & (~df['Description'].str.contains("\[AUTO\]", na=False))]
         df_rec = df_modeles.drop_duplicates(subset=['Description', 'Montant_Total'])
         
         if not df_rec.empty:
             with st.expander(f"📋 Gestion des récurrences", expanded=True):
-                # On regarde ce qui a déjà été créé ce mois-ci en version [AUTO]
                 deja_faites_ce_mois = df[(df['Mois'] == mois_actuel) & (df['Description'].str.contains("\[AUTO\]", na=False))]['Description'].unique().tolist()
                 
                 manquantes = []
@@ -171,7 +178,7 @@ try:
                 else:
                     st.success(f"✅ Toutes les récurrences ({len(df_rec)}) sont à jour pour {mois_actuel}.")
         else:
-            st.info("Cochez 'Dépense périodique' lors d'un ajout pour qu'elle apparaisse ici.")
+            st.info("Cochez 'Dépense mensuelle' lors d'un ajout pour qu'elle apparaisse ici.")
 
 except Exception as e:
     st.error(f"Erreur technique : {e}")
