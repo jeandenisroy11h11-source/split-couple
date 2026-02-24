@@ -105,7 +105,12 @@ try:
         st.markdown("---")
         st.header("⚙️ Récurrences")
         
-        # On filtre les uniques qui ont été marquées 'Oui' (n'importe quand dans l'historique)
+        # 1. Nettoyage : On force la conversion de 'Montant_Total' en nombre 
+        # On remplace les virgules par des points si nécessaire avant la conversion
+        df['Montant_Total'] = df['Montant_Total'].replace(',', '.', regex=True)
+        df['Montant_Total'] = pd.to_numeric(df['Montant_Total'], errors='coerce').fillna(0)
+
+        # 2. On récupère les uniques
         df_rec = df[df['Periodique'] == 'Oui'].drop_duplicates(subset=['Description', 'Montant_Total'])
         
         if not df_rec.empty:
