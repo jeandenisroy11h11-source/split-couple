@@ -101,46 +101,52 @@ try:
                 requests.post(st.secrets["api"]["url"], json=p_del)
                 st.rerun()
 
-        # --- SECTION 3 : RÉCURRENCES (LOGIQUE CUMULATIVE) ---
+        # --- SECTION 3 : RÉCURRENCES (DÉTECTION INTELLIGENTE) ---
         st.markdown("---")
         st.header("⚙️ Récurrences")
         
-        # On trouve TOUTES les récurrences uniques définies dans le passé
+        # 1. On identifie toutes les récurrences uniques dans l'historique
         df_rec = df[df['Periodique'] == 'Oui'].drop_duplicates(subset=['Description', 'Montant_Total'])
         
         if not df_rec.empty:
-            with st.expander(f"📋 Gérer les {len(df_rec)} récurrences", expanded=True):
-                st.write("Voici la liste de vos abonnements/frais fixes :")
-                st.table(df_rec[['Description', 'Montant_Total', 'Payeur']])
+            with st.expander(f"📋 Gestion des récurrences", expanded=True):
+                # 2. On regarde ce qui a DEJÀ été généré ce mois-ci
+                mois_actuel = datetime.now().strftime("%Y-%m")
+                deja_faites_ce_mois = df[df['Mois'] == mois_actuel]['Description'].unique().tolist()
                 
-                # Vérifier si on a déjà injecté des récurrences ce mois-ci
-                deja_injecte = df[(df['Mois'] == mois_actuel) & (df['Description'].str.contains("\[AUTO\]"))]
+                # 3. On filtre pour ne garder que celles qui ne sont pas encore en [AUTO] ce mois-ci
+                manquantes = []
+                for _, row in df_rec.iterrows():
+                    nom_auto = f"[AUTO] {row['Description']}"
+                    if nom_auto not in deja_faites_ce_mois:
+                        manquantes.append(row)
                 
-                if not deja_injecte.empty:
-                    st.info(f"✅ {len(deja_injecte)} récurrences sont déjà présentes pour {mois_actuel}.")
-                    bloque = not st.checkbox("Ajouter quand même (risque de doublons)")
+                if manquantes:
+                    df_manquantes = pd.DataFrame(manquantes)
+                    st.write(f"⚠️ Il manque **{len(manquantes)}** récurrences à générer pour {mois_actuel} :")
+                    st.table(df_manquantes[['Description', 'Montant_Total', 'Payeur']])
+                    
+                    if st.button(f"🔄 Générer les {len(manquantes)} manquantes"):
+                        bar = st.progress(0)
+                        for i, m_row in enumerate(manquantes):
+                            p_auto = {
+                                "Date": datetime.now().strftime("%Y-%m-%d"),
+                                "Description": f"[AUTO] {m_row['Description']}",
+                                "Montant_Total": float(m_row['Montant_Total']),
+                                "Payeur": m_row['Payeur'],
+                                "Part_Payeur": float(m_row['Part_Payeur']),
+                                "Part_Autre": float(m_row['Part_Autre']),
+                                "Periodique": "Oui"
+                            }
+                            requests.post(st.secrets["api"]["url"], json=p_auto)
+                            bar.progress((i + 1) / len(manquantes))
+                        st.success("Terminé !")
+                        time.sleep(1)
+                        st.rerun()
                 else:
-                    bloque = False
-
-                if st.button("🔄 Copier ces récurrences pour le mois actuel", disabled=bloque):
-                    bar = st.progress(0)
-                    for i, (_, row) in enumerate(df_rec.iterrows()):
-                        p_auto = {
-                            "Date": datetime.now().strftime("%Y-%m-%d"),
-                            "Description": f"[AUTO] {row['Description']}",
-                            "Montant_Total": float(row['Montant_Total']),
-                            "Payeur": row['Payeur'],
-                            "Part_Payeur": float(row['Part_Payeur']),
-                            "Part_Autre": float(row['Part_Autre']),
-                            "Periodique": "Oui"
-                        }
-                        requests.post(st.secrets["api"]["url"], json=p_auto)
-                        bar.progress((i + 1) / len(df_rec))
-                    st.success("🎉 Récurrences ajoutées avec succès !")
-                    time.sleep(1)
-                    st.rerun()
+                    st.success(f"✅ Toutes les récurrences ({len(df_rec)}) sont déjà présentes en {mois_actuel}.")
         else:
-            st.info("Cochez 'Dépense périodique' lors d'un achat pour qu'il s'ajoute à cette liste.")
+            st.info("Aucune dépense marquée comme 'Périodique' dans l'historique.")
 
 except Exception as e:
     st.error(f"Erreur technique : {e}")
