@@ -74,7 +74,7 @@ if amount_input_val > 0:
 
 is_periodic = st.checkbox("Dépense mensuelle")
 
-if st.button("🚀 Enregistrer", type="primary", use_container_width=True):
+if st.button("Enregistrer", type="primary", use_container_width=True):
     if description and amount_input_val > 0:
         payload = {
             "Date": date_depense.strftime("%Y-%m-%d"),
