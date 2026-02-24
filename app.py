@@ -10,6 +10,12 @@ st.set_page_config(page_title="Splitwise gratuit", page_icon="💰")
 DEVISE = "CAD"
 UTILISATEURS = ["Jean-Denis", "Élyane"]
 
+# Initialisation des clés dans le session_state si elles n'existent pas
+if "input_desc" not in st.session_state:
+    st.session_state["input_desc"] = ""
+if "input_amount" not in st.session_state:
+    st.session_state["input_amount"] = None
+
 # Gestion des utilisateurs via l'URL (?user=Élyane)
 query_params = st.query_params
 user_invite = query_params.get("user", UTILISATEURS[0])
@@ -23,9 +29,8 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # --- SECTION 1 : AJOUTER UNE DÉPENSE ---st.header("📝 Ajouter une dépense")
 col1, col2 = st.columns(2)
 with col1:
-    # On ajoute des 'key' pour pouvoir réinitialiser les champs plus tard
     description = st.text_input("Où ?", placeholder="Ex: Maxi", key="input_desc")
-    amount = st.number_input(f"Montant ({DEVISE})", min_value=0.0, step=1.00, value=None, placeholder="0.00", key="input_amount")
+    amount = st.number_input(f"Montant ({DEVISE})", min_value=0.0, step=1.00, value=st.session_state["input_amount"], placeholder="0.00", key="input_amount")
     date_depense = st.date_input("Date", datetime.now(), key="input_date")
 
 with col2:
@@ -60,14 +65,12 @@ if st.button("Enregistrer la dépense", type="primary"):
         try:
             res = requests.post(st.secrets["api"]["url"], json=payload)
             if res.status_code == 200:
-                st.balloons()
-                st.success("🎉 Enregistré !")
-                
-                # --- RÉINITIALISATION DES CHAMPS ---
+                # ICI : On vide les valeurs dans le session_state AVANT le rerun
                 st.session_state["input_desc"] = ""
                 st.session_state["input_amount"] = None
-                # La date revient automatiquement à aujourd'hui via le rerun car elle n'est pas figée dans le state
                 
+                st.balloons()
+                st.success("🎉 Enregistré !")
                 time.sleep(1)
                 st.rerun()
         except Exception as e:
@@ -114,13 +117,11 @@ try:
             mois_sel = st.selectbox("Filtrer par mois", ["Tous"] + liste_mois, index=default_idx + 1 if "Tous" in ["Tous"] else default_idx)
             disp_df = df if mois_sel == "Tous" else df[df['Mois'] == mois_sel]
             
-            # --- TRIER PAR DATE (plus récent en haut) ---
+            # Tri pour l'affichage
             disp_df_sorted = disp_df.sort_values(by="Date", ascending=False)
             st.dataframe(disp_df_sorted.drop(columns=['Mois']), use_container_width=True)
             
             st.subheader("🗑️ Supprimer une ligne")
-            
-            # On définit l'index sur la dernière ligne du dataframe filtré
             index_dernier = len(disp_df) - 1 if len(disp_df) > 0 else 0
             
             choix = st.selectbox(
@@ -146,15 +147,11 @@ try:
             with st.expander(f"📋 Gestion des récurrences", expanded=True):
                 deja_faites_ce_mois = df[(df['Mois'] == mois_actuel) & (df['Description'].str.contains("\[AUTO\]", na=False))]['Description'].unique().tolist()
                 
-                manquantes = []
-                for _, row in df_rec.iterrows():
-                    nom_cible = f"[AUTO] {row['Description']}"
-                    if nom_cible not in deja_faites_ce_mois:
-                        manquantes.append(row)
+                manquantes = [row for _, row in df_rec.iterrows() if f"[AUTO] {row['Description']}" not in deja_faites_ce_mois]
                 
                 if manquantes:
                     df_man = pd.DataFrame(manquantes)
-                    st.warning(f"⚠️ Il manque **{len(manquantes)}** récurrences à générer pour {mois_actuel}")
+                    st.warning(f"⚠️ Il manque **{len(manquantes)}** récurrences pour {mois_actuel}")
                     st.table(df_man[['Description', 'Montant_Total', 'Payeur']])
                     
                     if st.button(f"🔄 Générer les {len(manquantes)} manquantes"):
@@ -175,9 +172,9 @@ try:
                         time.sleep(1)
                         st.rerun()
                 else:
-                    st.success(f"✅ Toutes les récurrences ({len(df_rec)}) sont à jour pour {mois_actuel}.")
+                    st.success(f"✅ Toutes les récurrences sont à jour pour {mois_actuel}.")
         else:
-            st.info("Cochez 'Dépense mensuelle' lors d'un ajout pour qu'elle apparaisse ici.")
+            st.info("Cochez 'Dépense mensuelle' lors d'un ajout pour l'enregistrer.")
 
 except Exception as e:
     st.error(f"Erreur technique : {e}")
