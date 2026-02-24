@@ -20,11 +20,10 @@ st.title("💰 Dépenses en tant que couple")
 # --- CONNEXION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- SECTION 1 : AJOUTER UNE DÉPENSE ---
-st.header("📝 Ajouter une dépense")
+# --- SECTION 1 : AJOUTER UNE DÉPENSE --- st.header("📝 Ajouter une dépense")
 col1, col2 = st.columns(2)
 with col1:
-    description = st.text_input("Quoi ?", placeholder="Ex: Épicerie")
+    description = st.text_input("Ou ?", placeholder="Ex: Maxi")
     amount = st.number_input(f"Montant ({DEVISE})", min_value=0.0, step=1.00, value=None, placeholder="0.00")
     date_depense = st.date_input("Date", datetime.now())
 
@@ -46,7 +45,7 @@ part_autre = amount_val - part_payer
 st.write(f"**Part de {payer} :** {part_payer:.2f} | **Part de {autre_personne} :** {part_autre:.2f}")
 is_periodic = st.checkbox("Dépense mensuelle")
 
-if st.button("🚀 Enregistrer la dépense", type="primary"):
+if st.button("Enregistrer la dépense", type="primary"):
     if description and amount_val > 0:
         payload = {
             "Date": date_depense.strftime("%Y-%m-%d"),
@@ -112,7 +111,17 @@ try:
             st.dataframe(disp_df.drop(columns=['Mois']), use_container_width=True)
             
             st.subheader("🗑️ Supprimer une ligne")
-            choix = st.selectbox("Choisir la dépense", options=disp_df.index, format_func=lambda x: f"{disp_df.loc[x, 'Description']} ({disp_df.loc[x, 'Montant_Total']})")
+            
+            # On définit l'index sur la dernière ligne (len(disp_df) - 1)
+            index_dernier = len(disp_df) - 1 if len(disp_df) > 0 else 0
+            
+            choix = st.selectbox(
+                "Choisir la dépense", 
+                options=disp_df.index, 
+                index=index_dernier,  # <-- C'est ici que la magie opère
+                format_func=lambda x: f"{disp_df.loc[x, 'Description']} ({disp_df.loc[x, 'Montant_Total']})"
+            )
+            
             if st.button("Confirmer la suppression"):
                 p_del = {"action": "delete", "Description": str(disp_df.loc[choix, 'Description']), "Montant_Total": float(disp_df.loc[choix, 'Montant_Total'])}
                 requests.post(st.secrets["api"]["url"], json=p_del)
