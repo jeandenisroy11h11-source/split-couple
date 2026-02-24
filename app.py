@@ -94,8 +94,8 @@ if st.button("Enregistrer la dépense", type="primary", use_container_width=True
                 st.session_state.amount_val = None
                 
                 # CHOISIS TON ANIMATION ICI :
-                st.snow() # Pour la neige
-                #st.toast("Dépense enregistrée !", icon="✅") # Pour le petit message
+                #st.snow() # Pour la neige
+                st.toast("Dépense enregistrée !", icon="✅") # Pour le petit message
                 #st.balloons()
                 time.sleep(1) # Laisse le temps de voir l'animation
                 st.rerun()
