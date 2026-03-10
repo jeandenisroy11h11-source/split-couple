@@ -9,20 +9,8 @@ import time
 LOGO_URL = "https://cdn-icons-png.flaticon.com/512/1611/1611179.png" 
 st.set_page_config(page_title="Splitwise Couple", page_icon="💰", layout="centered")
 
-# CSS pour forcer l'affichage horizontal sur mobile et icône
-st.markdown(f"""
-    <style>
-    [data-testid="column"] {{
-        width: calc(50% - 0.5rem) !important;
-        flex: 1 1 calc(50% - 0.5rem) !important;
-        min-width: 45% !important;
-    }}
-    </style>
-    <head>
-        <link rel="apple-touch-icon" href="{LOGO_URL}">
-        <link rel="icon" href="{LOGO_URL}">
-    </head>
-    """, unsafe_allow_html=True)
+# Style pour l'icône
+st.markdown(f"""<head><link rel="apple-touch-icon" href="{LOGO_URL}"><link rel="icon" href="{LOGO_URL}"></head>""", unsafe_allow_html=True)
 
 UTILISATEURS = ["Jean-Denis", "Élyane"]
 
@@ -42,48 +30,66 @@ form_suffix = f"_{st.session_state['form_id']}"
 # --- 2. CONNEXION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- 3. FORMULAIRE D'AJOUT ---
-st.header("💰 Dépenses en tant que couple")
+# --- 3. FORMULAIRE D'AJOUT (DESIGN MOBILE-FIRST) ---
+st.header("💰 Nouvelle Dépense")
 
-# Ligne 1 : Description (Pleine largeur)
-description = st.text_input("Où ?", placeholder="Ex: Maxi", key=f"desc{form_suffix}")
+# Ligne 1 : Utilisateur actuel (Boutons horizontaux pour 1 seul clic)
+nouveau_user = st.radio(
+    "Je suis :", 
+    UTILISATEURS, 
+    index=UTILISATEURS.index(st.session_state["current_user"]), 
+    horizontal=True, 
+    key=f"session_top{form_suffix}"
+)
 
-# Ligne 2 : Montant | Date (Côte à côte)
-col_mt, col_dt = st.columns(2)
-with col_mt:
-    amount = st.number_input("Montant", min_value=0.0, step=1.00, value=None, placeholder="0.00", key=f"amount{form_suffix}")
-with col_dt:
-    date_depense = st.date_input("Date", value=datetime.now(), key=f"date{form_suffix}")
+if nouveau_user != st.session_state["current_user"]:
+    st.session_state["current_user"] = nouveau_user
+    st.session_state["form_id"] += 1
+    st.rerun()
 
-# Ligne 3 : Payé par | Session (Côte à côte)
-col_pay, col_prof = st.columns(2)
-with col_pay:
-    # On garde "Payé par" avec l'index basé sur la session actuelle
-    payer = st.selectbox("Payé par", UTILISATEURS, index=UTILISATEURS.index(st.session_state["current_user"]), key=f"payer{form_suffix}")
-with col_prof:
-    # Sélecteur de profil pour changer qui utilise l'app
-    nouveau_user = st.selectbox("Utilisateur", UTILISATEURS, index=UTILISATEURS.index(st.session_state["current_user"]), key=f"session_top{form_suffix}")
-    if nouveau_user != st.session_state["current_user"]:
-        st.session_state["current_user"] = nouveau_user
-        st.session_state["form_id"] += 1
-        st.rerun()
+st.divider()
 
-# Répartition
-split_mode = st.radio("Répartition", ["50/50", "100/0", "0/100", "Perso %"], horizontal=True, key=f"split{form_suffix}")
+# Ligne 2 : Description
+description = st.text_input("Où ?", placeholder="Ex: Maxi, Hydro, Essence", key=f"desc{form_suffix}")
 
-pct_payer = 50.0
-if split_mode == "Perso %":
-    pct_payer = st.slider("Part payeur (%)", 0, 100, 50, key=f"slider{form_suffix}")
-elif split_mode == "100/0": pct_payer = 100.0
-elif split_mode == "0/100": pct_payer = 0.0
+# Ligne 3 : Montant (Gros et vide par défaut)
+amount = st.number_input("Montant ($)", min_value=0.0, step=1.00, value=None, placeholder="0.00", key=f"amount{form_suffix}")
 
+# Ligne 4 : Qui a payé ? (Boutons horizontaux)
+payer = st.radio(
+    "Payé par :", 
+    UTILISATEURS, 
+    index=UTILISATEURS.index(st.session_state["current_user"]), 
+    horizontal=True, 
+    key=f"payer{form_suffix}"
+)
+
+# Ligne 5 : Options cachées (Date et Répartition complexe)
+with st.expander("📅 Date & Répartition (Optionnel)"):
+    date_depense = st.date_input("Date de la dépense", value=datetime.now(), key=f"date{form_suffix}")
+    
+    split_mode = st.radio("Répartition", ["50/50", "100/0", "0/100", "Perso %"], horizontal=True, key=f"split{form_suffix}")
+    
+    pct_payer = 50.0
+    if split_mode == "Perso %":
+        pct_payer = st.slider("Part payeur (%)", 0, 100, 50, key=f"slider{form_suffix}")
+    elif split_mode == "100/0": pct_payer = 100.0
+    elif split_mode == "0/100": pct_payer = 0.0
+    
+    is_periodic = st.checkbox("Dépense mensuelle", key=f"periodic{form_suffix}")
+else:
+    # Valeurs par défaut si l'expander est fermé
+    date_depense = datetime.now()
+    pct_payer = 50.0
+    is_periodic = False
+
+# Calculs
 val_amount = amount if amount is not None else 0.0
 part_payer = (val_amount * pct_payer) / 100
 part_autre = val_amount - part_payer
-is_periodic = st.checkbox("Dépense mensuelle", key=f"periodic{form_suffix}")
 
-# Bouton d'enregistrement
-if st.button("Enregistrer la dépense", type="primary", use_container_width=True, disabled=st.session_state.is_submitting):
+# Ligne 6 : Bouton d'enregistrement (Large pour le pouce)
+if st.button("🚀 Enregistrer la dépense", type="primary", use_container_width=True, disabled=st.session_state.is_submitting):
     if description and val_amount > 0:
         st.session_state.is_submitting = True
         payload = {
@@ -99,7 +105,7 @@ if st.button("Enregistrer la dépense", type="primary", use_container_width=True
         try:
             res = requests.post(st.secrets["api"]["url"], json=payload)
             if res.status_code == 200:
-                st.toast("Enregistré ! ✅")
+                st.toast("C'est enregistré ! ✅")
                 st.balloons()
                 st.session_state["form_id"] += 1
                 st.session_state.is_submitting = False
@@ -124,7 +130,7 @@ try:
         el_du = df[df['Payeur'] == 'Élyane']['Part_Autre'].sum()
         solde_net = jd_du - el_du 
 
-        # Affichage du solde selon l'utilisateur sélectionné
+        # Message de solde dynamique
         if st.session_state["current_user"] == "Jean-Denis":
             if solde_net > 0: st.success(f"💰 Élyane te doit **{abs(solde_net):.2f}$**")
             elif solde_net < 0: st.warning(f"💸 Tu dois **{abs(solde_net):.2f}$** à Élyane")
@@ -152,7 +158,7 @@ try:
             st.dataframe(disp_df.drop(columns=['Mois']), use_container_width=True)
             
             st.subheader("🗑️ Supprimer")
-            choix = st.selectbox("Ligne à supprimer", options=disp_df.index, format_func=lambda x: f"{disp_df.loc[x, 'Description']} ({disp_df.loc[x, 'Montant_Total']}$)")
+            choix = st.selectbox("Sélectionner la ligne", options=disp_df.index, format_func=lambda x: f"{disp_df.loc[x, 'Description']} ({disp_df.loc[x, 'Montant_Total']}$)")
             if st.button("Confirmer la suppression"):
                 requests.post(st.secrets["api"]["url"], json={"action": "delete", "Description": str(disp_df.loc[choix, 'Description']), "Montant_Total": float(disp_df.loc[choix, 'Montant_Total'])})
                 st.rerun()
@@ -164,7 +170,7 @@ try:
                 deja_faites = df[(df['Mois'] == mois_actuel) & (df['Description'].str.contains("\[AUTO\]", na=False))]['Description'].tolist()
                 manquantes = [row for _, row in df_rec_m.iterrows() if f"[AUTO] {row['Description']}" not in deja_faites]
                 if manquantes:
-                    if st.button("🔄 Générer les récurrences", use_container_width=True):
+                    if st.button("🔄 Générer les manquantes", use_container_width=True):
                         for m_row in manquantes:
                             requests.post(st.secrets["api"]["url"], json={"Date": datetime.now().strftime("%Y-%m-%d"), "Description": f"[AUTO] {m_row['Description']}", "Montant_Total": float(m_row['Montant_Total']), "Payeur": m_row['Payeur'], "Part_Payeur": float(m_row['Part_Payeur']), "Part_Autre": float(m_row['Part_Autre']), "Periodique": "Oui"})
                         st.rerun()
