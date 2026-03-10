@@ -30,11 +30,11 @@ form_suffix = f"_{st.session_state['form_id']}"
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # --- 3. FORMULAIRE D'AJOUT ---
-st.header("💰 Nouvelle Dépense")
+st.header("💰 Dépense couple")
 
 # UTILISATEUR (Boutons horizontaux)
 nouveau_user = st.radio(
-    "Je suis :", 
+#    "Je suis :", 
     UTILISATEURS, 
     index=UTILISATEURS.index(st.session_state["current_user"]), 
     horizontal=True, 
@@ -46,7 +46,7 @@ if nouveau_user != st.session_state["current_user"]:
     st.session_state["form_id"] += 1
     st.rerun()
 
-st.divider()
+#st.divider()
 
 # DESCRIPTION
 description = st.text_input("Où ?", placeholder="Ex: Maxi", key=f"desc{form_suffix}")
@@ -102,7 +102,6 @@ if st.button("🚀 Enregistrer la dépense", type="primary", use_container_width
             res = requests.post(st.secrets["api"]["url"], json=payload)
             if res.status_code == 200:
                 st.toast("C'est enregistré ! ✅")
-                st.balloons()
                 st.session_state["form_id"] += 1
                 st.session_state.is_submitting = False
                 time.sleep(0.5)
