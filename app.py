@@ -24,26 +24,13 @@ st.markdown(f"""
 DEVISE = "CAD"
 UTILISATEURS = ["Jean-Denis", "Élyane"]
 
-# --- NOUVEAU : SÉLECTEUR DE PROFIL PERSISTANT ---
-# On vérifie d'abord l'URL, sinon on prend ce qui est en mémoire
-url_user = st.query_params.get("user")
-if url_user in UTILISATEURS:
-    st.session_state["current_user"] = url_user
-
+# --- GESTION DU PROFIL (LOGIQUE) ---
 if "current_user" not in st.session_state:
-    st.session_state["current_user"] = UTILISATEURS[0]
-
-# Petit sélecteur discret en haut pour changer de profil si besoin
-col_title, col_user = st.columns([2, 1])
-with col_title:
-    st.write(f"📍 Profil : **{st.session_state['current_user']}**")
-with col_user:
-    nouveau_user = st.selectbox("Changer", UTILISATEURS, 
-                                label_visibility="collapsed",
-                                index=UTILISATEURS.index(st.session_state["current_user"]))
-    if nouveau_user != st.session_state["current_user"]:
-        st.session_state["current_user"] = nouveau_user
-        st.rerun()
+    url_user = st.query_params.get("user")
+    if url_user in UTILISATEURS:
+        st.session_state["current_user"] = url_user
+    else:
+        st.session_state["current_user"] = UTILISATEURS[0]
 
 user_invite = st.session_state["current_user"]
 index_defaut = UTILISATEURS.index(user_invite)
@@ -113,7 +100,7 @@ if st.button("Enregistrer la dépense", type="primary", use_container_width=True
         except Exception as e:
             st.error(f"Erreur d'envoi : {e}")
 
-# --- 4. CALCUL DU SOLDE PERSONNALISÉ ---
+# --- 4. CALCUL DU SOLDE ---
 try:
     raw_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
     csv_url = raw_url.split('/edit')[0] + '/export?format=csv'
@@ -170,3 +157,17 @@ try:
                 else: st.success("À jour.")
 except Exception as e:
     st.error(f"Erreur technique : {e}")
+
+# --- 5. SÉLECTEUR DE PROFIL (TOUT EN BAS) ---
+st.divider()
+c_txt, c_sel = st.columns([1.5, 1])
+with c_txt:
+    st.caption(f"📱 Session actuelle : **{st.session_state['current_user']}**")
+with c_sel:
+    nouveau_user = st.selectbox("Changer", UTILISATEURS, 
+                                label_visibility="collapsed",
+                                index=UTILISATEURS.index(st.session_state["current_user"]),
+                                key="bottom_user_selector")
+    if nouveau_user != st.session_state["current_user"]:
+        st.session_state["current_user"] = nouveau_user
+        st.rerun()
