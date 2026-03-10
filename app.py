@@ -33,7 +33,9 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # --- 3. FORMULAIRE D'AJOUT (DESIGN MOBILE-FIRST) ---
 st.header("💰 Nouvelle Dépense")
 
-# Ligne 1 : Utilisateur actuel (Boutons horizontaux pour 1 seul clic)
+form_suffix = f"_{st.session_state['form_id']}"
+
+# Ligne 1 : Utilisateur actuel
 nouveau_user = st.radio(
     "Je suis :", 
     UTILISATEURS, 
@@ -52,10 +54,10 @@ st.divider()
 # Ligne 2 : Description
 description = st.text_input("Où ?", placeholder="Ex: Maxi, Hydro, Essence", key=f"desc{form_suffix}")
 
-# Ligne 3 : Montant (Gros et vide par défaut)
+# Ligne 3 : Montant
 amount = st.number_input("Montant ($)", min_value=0.0, step=1.00, value=None, placeholder="0.00", key=f"amount{form_suffix}")
 
-# Ligne 4 : Qui a payé ? (Boutons horizontaux)
+# Ligne 4 : Qui a payé ?
 payer = st.radio(
     "Payé par :", 
     UTILISATEURS, 
@@ -64,57 +66,32 @@ payer = st.radio(
     key=f"payer{form_suffix}"
 )
 
-# Ligne 5 : Options cachées (Date et Répartition complexe)
+# --- CORRECTION SYNTAXE ICI ---
+# On initialise les valeurs par défaut AVANT l'expander
+date_depense = datetime.now()
+pct_payer = 50.0
+is_periodic = False
+
 with st.expander("📅 Date & Répartition (Optionnel)"):
     date_depense = st.date_input("Date de la dépense", value=datetime.now(), key=f"date{form_suffix}")
     
     split_mode = st.radio("Répartition", ["50/50", "100/0", "0/100", "Perso %"], horizontal=True, key=f"split{form_suffix}")
     
-    pct_payer = 50.0
     if split_mode == "Perso %":
         pct_payer = st.slider("Part payeur (%)", 0, 100, 50, key=f"slider{form_suffix}")
-    elif split_mode == "100/0": pct_payer = 100.0
-    elif split_mode == "0/100": pct_payer = 0.0
+    elif split_mode == "100/0": 
+        pct_payer = 100.0
+    elif split_mode == "0/100": 
+        pct_payer = 0.0
+    else:
+        pct_payer = 50.0
     
     is_periodic = st.checkbox("Dépense mensuelle", key=f"periodic{form_suffix}")
-else:
-    # Valeurs par défaut si l'expander est fermé
-    date_depense = datetime.now()
-    pct_payer = 50.0
-    is_periodic = False
 
 # Calculs
 val_amount = amount if amount is not None else 0.0
 part_payer = (val_amount * pct_payer) / 100
 part_autre = val_amount - part_payer
-
-# Ligne 6 : Bouton d'enregistrement (Large pour le pouce)
-if st.button("🚀 Enregistrer la dépense", type="primary", use_container_width=True, disabled=st.session_state.is_submitting):
-    if description and val_amount > 0:
-        st.session_state.is_submitting = True
-        payload = {
-            "Date": date_depense.strftime("%Y-%m-%d"),
-            "Description": description,
-            "Montant_Total": float(val_amount),
-            "Payeur": payer,
-            "Part_Payeur": float(part_payer),
-            "Part_Autre": float(part_autre),
-            "Periodique": "Oui" if is_periodic else "Non",
-            "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
-        try:
-            res = requests.post(st.secrets["api"]["url"], json=payload)
-            if res.status_code == 200:
-                st.toast("C'est enregistré ! ✅")
-                st.balloons()
-                st.session_state["form_id"] += 1
-                st.session_state.is_submitting = False
-                time.sleep(0.5)
-                st.rerun()
-        except Exception as e:
-            st.error(f"Erreur : {e}")
-            st.session_state.is_submitting = False
-
 # --- 4. CALCUL DU SOLDE & HISTORIQUE ---
 try:
     raw_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
