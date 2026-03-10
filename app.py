@@ -32,12 +32,13 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # --- 3. FORMULAIRE D'AJOUT ---
 st.header("💰 Dépense couple")
 
-# UTILISATEUR (Boutons horizontaux)
+# UTILISATEUR (Boutons horizontaux) - Texte masqué
 nouveau_user = st.radio(
-    "Session de :", 
+    "", # Texte enlevé ici
     UTILISATEURS, 
     index=UTILISATEURS.index(st.session_state["current_user"]), 
     horizontal=True, 
+    label_visibility="collapsed", # Masque l'espace réservé au texte
     key=f"session_top{form_suffix}"
 )
 
