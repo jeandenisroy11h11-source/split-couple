@@ -10,7 +10,6 @@ LOGO_URL = "https://cdn-icons-png.flaticon.com/512/1611/1611179.png"
 
 st.set_page_config(page_title="Splitwise Couple", page_icon="💰", layout="centered")
 
-# Injection HTML pour l'icône
 st.markdown(f"""
     <head>
         <link rel="apple-touch-icon" href="{LOGO_URL}">
@@ -23,13 +22,19 @@ UTILISATEURS = ["Jean-Denis", "Élyane"]
 # --- GESTION DU PROFIL ---
 if "current_user" not in st.session_state:
     url_user = st.query_params.get("user")
-    if url_user in UTILISATEURS:
-        st.session_state["current_user"] = url_user
-    else:
-        st.session_state["current_user"] = UTILISATEURS[0]
+    st.session_state["current_user"] = url_user if url_user in UTILISATEURS else UTILISATEURS[0]
 
 user_invite = st.session_state["current_user"]
-index_defaut = UTILISATEURS.index(user_invite)
+
+# --- INITIALISATION / RÉINITIALISATION DES CHAMPS ---
+# Cette fonction remet tout à zéro
+def reset_form():
+    st.session_state.desc_val = ""
+    st.session_state.amount_val = None # Champ vide
+    st.session_state.date_val = datetime.now() # Date du jour
+    st.session_state.is_submitting = False
+
+if "desc_val" not in st.session_state: reset_form()
 
 # --- 2. CONNEXION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -37,22 +42,18 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # --- 3. FORMULAIRE D'AJOUT ---
 st.header("💰 Dépenses en tant que couple")
 
-# Initialisation des états de formulaire
-if "desc_val" not in st.session_state: st.session_state.desc_val = ""
-if "amount_val" not in st.session_state: st.session_state.amount_val = 0.0
-if "is_submitting" not in st.session_state: st.session_state.is_submitting = False
-
 row1_col1, row1_col2 = st.columns([2, 1])
 with row1_col1:
     description = st.text_input("Où ?", value=st.session_state.desc_val, placeholder="Ex: Maxi")
 with row1_col2:
-    amount = st.number_input(f"Montant", min_value=0.0, step=1.00, value=st.session_state.amount_val)
+    # Utilisation de placeholder pour que le champ soit vide visuellement
+    amount = st.number_input("Montant", min_value=0.0, step=1.00, value=st.session_state.amount_val, placeholder="0.00")
 
 row2_col1, row2_col2 = st.columns(2)
 with row2_col1:
-    date_depense = st.date_input("Date", datetime.now())
+    date_depense = st.date_input("Date", value=st.session_state.date_val)
 with row2_col2:
-    payer = st.selectbox("Payé par", UTILISATEURS, index=index_defaut)
+    payer = st.selectbox("Payé par", UTILISATEURS, index=UTILISATEURS.index(user_invite))
 
 split_mode = st.radio("Répartition", ["50/50", "100/0", "0/100", "Perso %"], horizontal=True)
 pct_payer = 50.0
@@ -60,18 +61,20 @@ if split_mode == "Perso %": pct_payer = st.slider("Part payeur (%)", 0, 100, 50)
 elif split_mode == "100/0": pct_payer = 100.0
 elif split_mode == "0/100": pct_payer = 0.0
 
-part_payer = (amount * pct_payer) / 100
-part_autre = amount - part_payer
+# Calculs
+val_amount = amount if amount is not None else 0.0
+part_payer = (val_amount * pct_payer) / 100
+part_autre = val_amount - part_payer
 is_periodic = st.checkbox("Dépense mensuelle")
 
 # BOUTON AVEC PROTECTION ANTI-DOUBLON
 if st.button("Enregistrer la dépense", type="primary", use_container_width=True, disabled=st.session_state.is_submitting):
-    if description and amount > 0:
+    if description and val_amount > 0:
         st.session_state.is_submitting = True
         payload = {
             "Date": date_depense.strftime("%Y-%m-%d"),
             "Description": description,
-            "Montant_Total": float(amount),
+            "Montant_Total": float(val_amount),
             "Payeur": payer,
             "Part_Payeur": float(part_payer),
             "Part_Autre": float(part_autre),
@@ -81,12 +84,11 @@ if st.button("Enregistrer la dépense", type="primary", use_container_width=True
         try:
             res = requests.post(st.secrets["api"]["url"], json=payload)
             if res.status_code == 200:
-                st.session_state.desc_val = ""
-                st.session_state.amount_val = 0.0
+                # ICI ON VIDE TOUT POUR LA PROCHAINE SAISIE
+                reset_form()
                 st.toast("Enregistré ! ✅")
                 st.balloons()
                 time.sleep(1)
-                st.session_state.is_submitting = False
                 st.rerun()
         except Exception as e:
             st.error(f"Erreur : {e}")
@@ -118,7 +120,6 @@ try:
 
         st.markdown("---")
         
-        # HISTORIQUE
         with st.expander("🔎 Historique & Suppression"):
             df['Mois'] = pd.to_datetime(df['Date'], errors='coerce').dt.to_period('M').astype(str)
             mois_actuel = datetime.now().strftime("%Y-%m")
@@ -131,11 +132,7 @@ try:
                 tri_sel = st.radio("Trier par", ["Date", "Saisie"], horizontal=True)
 
             disp_df = df if mois_sel == "Tous" else df[df['Mois'] == mois_sel]
-            
-            if tri_sel == "Date":
-                disp_df = disp_df.sort_values(by="Date", ascending=False)
-            else:
-                disp_df = disp_df.sort_index(ascending=False)
+            disp_df = disp_df.sort_values(by="Date", ascending=False) if tri_sel == "Date" else disp_df.sort_index(ascending=False)
 
             st.dataframe(disp_df.drop(columns=['Mois']), use_container_width=True)
             
@@ -146,7 +143,6 @@ try:
                 requests.post(st.secrets["api"]["url"], json={"action": "delete", "Description": str(disp_df.loc[choix, 'Description']), "Montant_Total": float(disp_df.loc[choix, 'Montant_Total'])})
                 st.rerun()
 
-        # RÉINTÉGRATION DES RÉCURRENCES
         with st.expander("⚙️ Récurrences mensuelles"):
             mois_actuel = datetime.now().strftime("%Y-%m")
             df_rec_m = df[(df['Periodique'] == 'Oui') & (~df['Description'].str.contains("\[AUTO\]", na=False))].drop_duplicates(subset=['Description', 'Montant_Total'])
@@ -154,21 +150,11 @@ try:
                 deja_faites = df[(df['Mois'] == mois_actuel) & (df['Description'].str.contains("\[AUTO\]", na=False))]['Description'].tolist()
                 manquantes = [row for _, row in df_rec_m.iterrows() if f"[AUTO] {row['Description']}" not in deja_faites]
                 if manquantes:
-                    st.warning(f"Manquantes : {len(manquantes)}")
                     if st.button("🔄 Générer les récurrences", use_container_width=True):
                         for m_row in manquantes:
-                            requests.post(st.secrets["api"]["url"], json={
-                                "Date": datetime.now().strftime("%Y-%m-%d"),
-                                "Description": f"[AUTO] {m_row['Description']}",
-                                "Montant_Total": float(m_row['Montant_Total']),
-                                "Payeur": m_row['Payeur'],
-                                "Part_Payeur": float(m_row['Part_Payeur']),
-                                "Part_Autre": float(m_row['Part_Autre']),
-                                "Periodique": "Oui"
-                            })
+                            requests.post(st.secrets["api"]["url"], json={"Date": datetime.now().strftime("%Y-%m-%d"), "Description": f"[AUTO] {m_row['Description']}", "Montant_Total": float(m_row['Montant_Total']), "Payeur": m_row['Payeur'], "Part_Payeur": float(m_row['Part_Payeur']), "Part_Autre": float(m_row['Part_Autre']), "Periodique": "Oui"})
                         st.rerun()
-                else: st.success("Toutes les récurrences sont à jour.")
-            else: st.info("Aucune dépense périodique trouvée.")
+                else: st.success("À jour.")
 
 except Exception as e:
     st.error(f"Erreur technique : {e}")
@@ -179,8 +165,8 @@ c_txt, c_sel = st.columns([1.5, 1])
 with c_txt:
     st.caption(f"📱 Session : **{st.session_state['current_user']}**")
 with c_sel:
-    nouveau_user = st.selectbox("Changer", UTILISATEURS, label_visibility="collapsed",
-                                index=UTILISATEURS.index(st.session_state["current_user"]))
+    nouveau_user = st.selectbox("Changer", UTILISATEURS, label_visibility="collapsed", index=UTILISATEURS.index(user_invite))
     if nouveau_user != st.session_state["current_user"]:
         st.session_state["current_user"] = nouveau_user
+        reset_form() # On vide aussi si on change de profil
         st.rerun()
