@@ -14,7 +14,6 @@ st.set_page_config(
     layout="centered"
 )
 
-# Injection HTML pour l'icône sur l'écran d'accueil du téléphone
 st.markdown(f"""
     <head>
         <link rel="apple-touch-icon" href="{LOGO_URL}">
@@ -25,25 +24,38 @@ st.markdown(f"""
 DEVISE = "CAD"
 UTILISATEURS = ["Jean-Denis", "Élyane"]
 
-# --- GESTION DE L'UTILISATEUR (UNIFIÉE) ---
-# On vérifie l'URL, sinon on garde ce qu'on a en mémoire (session_state)
+# --- NOUVEAU : SÉLECTEUR DE PROFIL PERSISTANT ---
+# On vérifie d'abord l'URL, sinon on prend ce qui est en mémoire
 url_user = st.query_params.get("user")
 if url_user in UTILISATEURS:
     st.session_state["current_user"] = url_user
-elif "current_user" not in st.session_state:
+
+if "current_user" not in st.session_state:
     st.session_state["current_user"] = UTILISATEURS[0]
+
+# Petit sélecteur discret en haut pour changer de profil si besoin
+col_title, col_user = st.columns([2, 1])
+with col_title:
+    st.write(f"📍 Profil : **{st.session_state['current_user']}**")
+with col_user:
+    nouveau_user = st.selectbox("Changer", UTILISATEURS, 
+                                label_visibility="collapsed",
+                                index=UTILISATEURS.index(st.session_state["current_user"]))
+    if nouveau_user != st.session_state["current_user"]:
+        st.session_state["current_user"] = nouveau_user
+        st.rerun()
 
 user_invite = st.session_state["current_user"]
 index_defaut = UTILISATEURS.index(user_invite)
 
-# Initialisation des variables pour vider le formulaire
+# Initialisation formulaire
 if "desc_val" not in st.session_state: st.session_state.desc_val = ""
 if "amount_val" not in st.session_state: st.session_state.amount_val = None
 
 # --- 2. CONNEXION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- 3. FORMULAIRE D'AJOUT (TON AFFICHAGE) ---
+# --- 3. FORMULAIRE D'AJOUT ---
 st.header("💰 Dépenses en tant que couple")
 
 row1_col1, row1_col2 = st.columns([2, 1])
@@ -66,13 +78,11 @@ elif split_mode == "100/0": pct_payer = 100.0
 elif split_mode == "0/100": pct_payer = 0.0
 else: pct_payer = 50.0
 
-# Calculs de répartition
 amount_input_val = amount if amount is not None else 0.0
 part_payer = (amount_input_val * pct_payer) / 100
 part_autre = amount_input_val - part_payer
 autre_personne = UTILISATEURS[1] if payer == UTILISATEURS[0] else UTILISATEURS[0]
 
-# Affichage des parts en temps réel
 if amount_input_val > 0:
     c1, c2 = st.columns(2)
     c1.caption(f"👤 {payer}: **{part_payer:.2f}$**")
@@ -80,7 +90,6 @@ if amount_input_val > 0:
 
 is_periodic = st.checkbox("Dépense mensuelle")
 
-# Bouton d'enregistrement avec tes animations
 if st.button("Enregistrer la dépense", type="primary", use_container_width=True):
     if description and amount_input_val > 0:
         payload = {
@@ -97,24 +106,20 @@ if st.button("Enregistrer la dépense", type="primary", use_container_width=True
             if res.status_code == 200:
                 st.session_state.desc_val = ""
                 st.session_state.amount_val = None
-                
-                # Tes animations préférées
                 st.toast("Dépense enregistrée !", icon="✅")
-                #st.balloons() 
-                
+                st.balloons() 
                 time.sleep(1)
                 st.rerun()
         except Exception as e:
             st.error(f"Erreur d'envoi : {e}")
 
-# --- 4. CALCUL DU SOLDE PERSONNALISÉ (SOUS LE BOUTON) ---
+# --- 4. CALCUL DU SOLDE PERSONNALISÉ ---
 try:
     raw_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
     csv_url = raw_url.split('/edit')[0] + '/export?format=csv'
     df = pd.read_csv(csv_url)
 
     if not df.empty:
-        # Nettoyage des données
         for col in ['Montant_Total', 'Part_Payeur', 'Part_Autre']:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
@@ -122,12 +127,10 @@ try:
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.date
         df['Mois'] = pd.to_datetime(df['Date']).dt.to_period('M').astype(str)
         
-        # Calcul du solde
         jd_du = df[df['Payeur'] == 'Jean-Denis']['Part_Autre'].sum()
         el_du = df[df['Payeur'] == 'Élyane']['Part_Autre'].sum()
         solde_net = jd_du - el_du 
 
-        # Affichage du solde personnalisé selon qui regarde
         if user_invite == "Jean-Denis":
             if solde_net > 0: st.success(f"💰 Élyane te doit **{abs(solde_net):.2f}$**")
             elif solde_net < 0: st.warning(f"💸 Tu dois **{abs(solde_net):.2f}$** à Élyane")
@@ -137,15 +140,12 @@ try:
             elif solde_net > 0: st.warning(f"💸 Tu dois **{abs(solde_net):.2f}$** à Jean-Denis")
             else: st.info("✅ Vous êtes quitte !")
 
-        # --- 5. HISTORIQUE ET RÉCURRENCES ---
         st.markdown("---")
-        
         with st.expander("🔎 Historique & Suppression"):
             mois_actuel = datetime.now().strftime("%Y-%m")
             liste_mois = sorted([m for m in df['Mois'].unique() if pd.notna(m)], reverse=True)
             mois_sel = st.selectbox("Filtrer par mois", ["Tous"] + liste_mois, 
                                    index=liste_mois.index(mois_actuel)+1 if mois_actuel in liste_mois else 0)
-            
             disp_df = df if mois_sel == "Tous" else df[df['Mois'] == mois_sel]
             st.dataframe(disp_df.drop(columns=['Mois']).sort_values(by="Date", ascending=False), use_container_width=True)
             
@@ -154,11 +154,7 @@ try:
             choix = st.selectbox("Sélectionner la ligne", options=disp_df.index, index=index_dernier,
                                format_func=lambda x: f"{disp_df.loc[x, 'Description']} ({disp_df.loc[x, 'Montant_Total']})")
             if st.button("Confirmer la suppression", use_container_width=True):
-                requests.post(st.secrets["api"]["url"], json={
-                    "action": "delete", 
-                    "Description": str(disp_df.loc[choix, 'Description']), 
-                    "Montant_Total": float(disp_df.loc[choix, 'Montant_Total'])
-                })
+                requests.post(st.secrets["api"]["url"], json={"action": "delete", "Description": str(disp_df.loc[choix, 'Description']), "Montant_Total": float(disp_df.loc[choix, 'Montant_Total'])})
                 st.rerun()
 
         with st.expander("⚙️ Récurrences mensuelles"):
@@ -166,25 +162,11 @@ try:
             if not df_rec_m.empty:
                 deja_faites = df[(df['Mois'] == mois_actuel) & (df['Description'].str.contains("\[AUTO\]", na=False))]['Description'].tolist()
                 manquantes = [row for _, row in df_rec_m.iterrows() if f"[AUTO] {row['Description']}" not in deja_faites]
-                
                 if manquantes:
-                    st.warning(f"Il manque {len(manquantes)} récurrences pour {mois_actuel}")
                     if st.button(f"🔄 Générer les manquantes", use_container_width=True):
                         for m_row in manquantes:
-                            requests.post(st.secrets["api"]["url"], json={
-                                "Date": datetime.now().strftime("%Y-%m-%d"),
-                                "Description": f"[AUTO] {m_row['Description']}",
-                                "Montant_Total": float(m_row['Montant_Total']),
-                                "Payeur": m_row['Payeur'],
-                                "Part_Payeur": float(m_row['Part_Payeur']),
-                                "Part_Autre": float(m_row['Part_Autre']),
-                                "Periodique": "Oui"
-                            })
+                            requests.post(st.secrets["api"]["url"], json={"Date": datetime.now().strftime("%Y-%m-%d"), "Description": f"[AUTO] {m_row['Description']}", "Montant_Total": float(m_row['Montant_Total']), "Payeur": m_row['Payeur'], "Part_Payeur": float(m_row['Part_Payeur']), "Part_Autre": float(m_row['Part_Autre']), "Periodique": "Oui"})
                         st.rerun()
-                else:
-                    st.success("Toutes les récurrences sont à jour.")
-            else:
-                st.info("Aucune dépense périodique configurée.")
-
+                else: st.success("À jour.")
 except Exception as e:
     st.error(f"Erreur technique : {e}")
