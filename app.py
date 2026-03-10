@@ -34,7 +34,7 @@ st.header("💰 Dépense couple")
 
 # UTILISATEUR (Boutons horizontaux)
 nouveau_user = st.radio(
-#    "Je suis :", 
+    "Session de :", 
     UTILISATEURS, 
     index=UTILISATEURS.index(st.session_state["current_user"]), 
     horizontal=True, 
