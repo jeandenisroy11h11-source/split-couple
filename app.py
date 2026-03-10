@@ -25,20 +25,25 @@ st.markdown(f"""
 DEVISE = "CAD"
 UTILISATEURS = ["Jean-Denis", "Élyane"]
 
-# Gestion de l'utilisateur via l'URL (?user=Jean-Denis)
-user_invite = st.query_params.get("user", UTILISATEURS[0])
-index_defaut = UTILISATEURS.index(user_invite) if user_invite in UTILISATEURS else 0
+# --- GESTION DE L'UTILISATEUR (UNIFIÉE) ---
+# On vérifie l'URL, sinon on garde ce qu'on a en mémoire (session_state)
+url_user = st.query_params.get("user")
+if url_user in UTILISATEURS:
+    st.session_state["current_user"] = url_user
+elif "current_user" not in st.session_state:
+    st.session_state["current_user"] = UTILISATEURS[0]
+
+user_invite = st.session_state["current_user"]
+index_defaut = UTILISATEURS.index(user_invite)
 
 # Initialisation des variables pour vider le formulaire
 if "desc_val" not in st.session_state: st.session_state.desc_val = ""
 if "amount_val" not in st.session_state: st.session_state.amount_val = None
 
-#st.title("💰 Dépenses Couple")
-
 # --- 2. CONNEXION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- 3. FORMULAIRE D'AJOUT (COMPACT) ---
+# --- 3. FORMULAIRE D'AJOUT (TON AFFICHAGE) ---
 st.header("💰 Dépenses en tant que couple")
 
 row1_col1, row1_col2 = st.columns([2, 1])
@@ -75,7 +80,7 @@ if amount_input_val > 0:
 
 is_periodic = st.checkbox("Dépense mensuelle")
 
-# Bouton d'enregistrement
+# Bouton d'enregistrement avec tes animations
 if st.button("Enregistrer la dépense", type="primary", use_container_width=True):
     if description and amount_input_val > 0:
         payload = {
@@ -93,16 +98,16 @@ if st.button("Enregistrer la dépense", type="primary", use_container_width=True
                 st.session_state.desc_val = ""
                 st.session_state.amount_val = None
                 
-                # CHOISIS TON ANIMATION ICI :
-                #st.snow() # Pour la neige
-                st.toast("Dépense enregistrée !", icon="✅") # Pour le petit message
-                #st.balloons()
-                time.sleep(1) # Laisse le temps de voir l'animation
+                # Tes animations préférées
+                st.toast("Dépense enregistrée !", icon="✅")
+                #st.balloons() 
+                
+                time.sleep(1)
                 st.rerun()
         except Exception as e:
             st.error(f"Erreur d'envoi : {e}")
 
-# --- 4. CALCUL DU SOLDE PERSONNALISÉ ---
+# --- 4. CALCUL DU SOLDE PERSONNALISÉ (SOUS LE BOUTON) ---
 try:
     raw_url = st.secrets["connections"]["gsheets"]["spreadsheet"]
     csv_url = raw_url.split('/edit')[0] + '/export?format=csv'
@@ -122,7 +127,7 @@ try:
         el_du = df[df['Payeur'] == 'Élyane']['Part_Autre'].sum()
         solde_net = jd_du - el_du 
 
-        # Affichage du solde sous le bouton
+        # Affichage du solde personnalisé selon qui regarde
         if user_invite == "Jean-Denis":
             if solde_net > 0: st.success(f"💰 Élyane te doit **{abs(solde_net):.2f}$**")
             elif solde_net < 0: st.warning(f"💸 Tu dois **{abs(solde_net):.2f}$** à Élyane")
